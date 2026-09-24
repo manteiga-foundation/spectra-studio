@@ -25,6 +25,10 @@ The **Spectra 6 Image Conversion Studio** shifts this entire workflow into the b
 3. **Configure Settings:** Adjust the dithering and palette options as required for your specific e-paper module.
 4. **Export:** Download the optimized output, ready to be flashed to your Spectra 6 display.
 
+## Visual Demonstration
+
+![Studio Demo](assets/demo.gif)
+
 ## Interface Preview
 
 | Studio Interface | Conversion Preview |
