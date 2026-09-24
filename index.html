@@ -174,7 +174,7 @@
             padding: 12px 24px;
             position: relative;
             overflow: hidden;
-            margin-bottom: 30px;
+            margin-bottom: 40px;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             display: flex;
             align-items: center;
@@ -204,6 +204,18 @@
             display: inline-block;
             border-bottom: none;
             padding-bottom: 0;
+            white-space: nowrap;
+        }
+        .hero-desc {
+            font-size: 0.85em;
+            color: #94a3b8;
+            margin: 0;
+            border-left: 1px solid #334155;
+            padding-left: 16px;
+            display: none; /* hidden on very small screens */
+        }
+        @media (min-width: 768px) {
+            .hero-desc { display: inline-block; }
         }
         .hero-manteiga a {
             color: #cbd5e1;
@@ -214,12 +226,14 @@
             font-size: 0.9em;
             font-weight: 500;
             transition: color 0.2s;
+            white-space: nowrap;
         }
         .hero-manteiga a:hover {
             color: white;
         }
         .hero-right {
             z-index: 10;
+            margin-left: 16px;
         }
         .hero-cta {
             display: inline-flex;
@@ -233,11 +247,11 @@
             font-size: 0.85em;
             font-weight: 600;
             transition: background 0.2s;
+            white-space: nowrap;
         }
         .hero-cta:hover {
             background: #475569;
         }
-
     </style>
 </head>
 <body>
@@ -306,8 +320,7 @@
 
 
 <div class="app-container">
-    <h1>Spectra Studio</h1>
-    <div class="subtitle">An open-source converter for 720x480 Spectra 6 E-Ink displays.</div>
+    
     
     <div class="step-card">
         <h3 class="step-header"><span>1</span> Choose Your Photos</h3>
