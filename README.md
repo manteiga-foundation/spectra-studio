@@ -20,7 +20,7 @@ The **Spectra 6 Image Conversion Studio** shifts this entire workflow into the b
 
 ## Usage Instructions
 
-1. **Deploy or Run Locally:** Since the studio is entirely client-side, you can open `spectra-converter.html` directly in any modern web browser.
+1. **Deploy or Run Locally:** Since the studio is entirely client-side, you can open `index.html` directly in any modern web browser.
 2. **Upload Image:** Select your source graphic (e.g., standard PNG or JPEG).
 3. **Configure Settings:** Adjust the dithering and palette options as required for your specific e-paper module.
 4. **Export:** Download the optimized output, ready to be flashed to your Spectra 6 display.
