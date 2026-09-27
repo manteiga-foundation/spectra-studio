@@ -312,10 +312,12 @@
             <option value="none">No Rotation (Leave everything as-is)</option>
         </select>
 
-        <label class="dither-check" style="margin-top: 15px;">
-            <input type="checkbox" id="dither" checked> 
-            <strong>Enable Dithering</strong> (Turn ON for real photos, OFF for logos/text)
-        </label>
+        <div style="margin-top: 15px;">
+            <label><strong>Dithering Selection</strong> (Turn ON for photos, OFF for logos/text)</label>
+            <div id="ditherList" style="margin-top: 8px; background: var(--bg-color); border: 1px solid var(--border-color); padding: 10px; border-radius: 4px; max-height: 120px; overflow-y: auto; font-size: 0.9em;">
+                <span style="color: #666; font-style: italic;">Please select images in Step 1 first.</span>
+            </div>
+        </div>
 
         <label for="slideshowInterval" style="margin-top: 15px;"><strong>Slideshow Interval</strong> (Time between images)</label>
         <select id="slideshowInterval">
@@ -358,6 +360,33 @@
       { r: 255, g: 255, b: 0,   val: 2 }, { r: 255, g: 0,   b: 0,   val: 3 }, 
       { r: 0,   g: 0,   b: 255, val: 5 }, { r: 0,   g: 255, b: 0,   val: 6 }
     ];
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const list = document.getElementById('ditherList');
+            const files = e.target.files;
+            if (files.length === 0) {
+                list.innerHTML = '<span style="color: #666; font-style: italic;">Please select images in Step 1 first.</span>';
+                return;
+            }
+            
+            let html = '<label style="display:flex; align-items:center; gap:8px; margin-bottom:8px; border-bottom:1px solid var(--border-color); padding-bottom:8px; cursor:pointer;">' +
+                       '<input type="checkbox" id="ditherAll" checked onchange="toggleAllDither()" style="margin:0; width:16px; height:16px;"> <strong>Apply to All</strong></label>';
+            
+            for (let i = 0; i < files.length; i++) {
+                html += `<label style="display:flex; align-items:center; gap:8px; margin-bottom:5px; margin-left:5px; cursor:pointer;">
+                              <input type="checkbox" class="dither-cb" data-index="${i}" checked style="margin:0; width:16px; height:16px;"> ${files[i].name}
+                           </label>`;
+            }
+            list.innerHTML = html;
+        });
+    });
+
+    function toggleAllDither() {
+        const isChecked = document.getElementById('ditherAll').checked;
+        const cbs = document.querySelectorAll('.dither-cb');
+        cbs.forEach(cb => cb.checked = isChecked);
+    }
 
     async function processImages() {
         const files = document.getElementById('fileInput').files;
@@ -406,7 +435,11 @@
     function processSingleImage(img, index) {
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-        const useDither = document.getElementById('dither').checked;
+        
+        let useDither = true;
+        const ditherCb = document.querySelector(`.dither-cb[data-index="${index}"]`);
+        if (ditherCb) useDither = ditherCb.checked;
+        
         const scaleMode = document.getElementById('scaleMode').value;
         const rotateMode = document.getElementById('rotateMode').value;
         
