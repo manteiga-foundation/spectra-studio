@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aninha E-Ink Image Optimizer</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f5f7;
+            color: #111827;
+            margin: 0;
+            padding: 40px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            max-width: 800px;
+            width: 100%;
+        }
+        h1 { margin-top: 0; font-size: 24px; color: #111827; }
+        p { color: #4B5563; }
+        .upload-area {
+            border: 2px dashed #D1D5DB;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin: 20px 0;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .upload-area:hover { border-color: #6366F1; }
+        .upload-area input { display: none; }
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+        select, button {
+            padding: 10px 16px;
+            border: 1px solid #D1D5DB;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+        button.primary {
+            background: #6366F1;
+            color: white;
+            border: none;
+            font-weight: 600;
+        }
+        button.primary:hover { background: #4F46E5; }
+        .canvases {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            align-items: center;
+            margin-top: 20px;
+        }
+        .canvas-container {
+            text-align: center;
+        }
+        .canvas-container span {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #374151;
+        }
+        canvas {
+            border: 1px solid #E5E7EB;
+            border-radius: 4px;
+            max-width: 100%;
+            height: auto;
+            image-rendering: pixelated;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>E-Ink Image Optimizer</h1>
+    <p>Upload an image. This tool will resize and fit it to 600x448 (maintaining quality without cropping) and apply customizable dithering using the 7-color palette of the Waveshare display. The resulting .BIN is ready to be directly streamed to the ESP32.</p>
+
+    <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <span style="font-weight: 500; color: #6366F1;">Click to upload</span> or drag and drop an image
+        <input type="file" id="file-input" accept="image/*">
+    </div>
+
+    <div class="controls" id="controls" style="display: none; align-items: center; flex-wrap: wrap;">
+        <label>
+            Algorithm:
+            <select id="dither-select">
+                <option value="atkinson">Atkinson (Less Noisy)</option>
+                <option value="floyd">Floyd-Steinberg</option>
+                <option value="none">Nearest (No Dither)</option>
+            </select>
+        </label>
+        <label id="strength-container" style="display: flex; align-items: center; gap: 5px;">
+            Noise/Bleed: <span id="strength-val" style="min-width:35px; display:inline-block;">75%</span>
+            <input type="range" id="dither-strength" min="0" max="1" step="0.05" value="0.75" style="width: 80px;">
+        </label>
+        <button class="primary" id="download-bin-btn" style="background: #10B981;">Download E-Ink .BIN</button>
+        <button class="primary" id="download-btn">Download Preview PNG</button>
+    </div>
+
+    <div class="canvases" id="canvases" style="display: none;">
+        <div class="canvas-container">
+            <span>Optimized for 7-Color Display (600x448)</span>
+            <canvas id="preview-canvas" width="600" height="448"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+    const EINK_WIDTH = 600;
+    const EINK_HEIGHT = 448;
+
+    // The 7-color palette of the Waveshare EPD_5in65f
+    const PALETTE = [
+        { r: 0,   g: 0,   b: 0   }, // Black
+        { r: 255, g: 255, b: 255 }, // White
+        { r: 0,   g: 255, b: 0   }, // Green
+        { r: 0,   g: 0,   b: 255 }, // Blue
+        { r: 255, g: 0,   b: 0   }, // Red
+        { r: 255, g: 255, b: 0   }, // Yellow
+        { r: 255, g: 128, b: 0   }  // Orange
+    ];
+
+    const fileInput = document.getElementById('file-input');
+    const dropZone = document.getElementById('drop-zone');
+    const previewCanvas = document.getElementById('preview-canvas');
+    const ctx = previewCanvas.getContext('2d', { willReadFrequently: true });
+    const controls = document.getElementById('controls');
+    const canvases = document.getElementById('canvases');
+    const downloadBtn = document.getElementById('download-btn');
+    const ditherSelect = document.getElementById('dither-select');
+    const ditherStrength = document.getElementById('dither-strength');
+    const strengthVal = document.getElementById('strength-val');
+    const strengthContainer = document.getElementById('strength-container');
+
+    const downloadBinBtn = document.getElementById('download-bin-btn');
+
+    let processedPaletteData = new Uint8Array((EINK_WIDTH * EINK_HEIGHT) / 2);
+
+    let originalImage = new Image();
+
+    // Event Listeners
+    fileInput.addEventListener('change', handleFile);
+    ditherSelect.addEventListener('change', () => {
+        strengthContainer.style.display = (ditherSelect.value === 'none') ? 'none' : 'flex';
+        processImage();
+    });
+    ditherStrength.addEventListener('input', () => {
+        strengthVal.textContent = Math.round(ditherStrength.value * 100) + '%';
+        processImage();
+    });
+    
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.style.borderColor = '#6366F1';
+    });
+    dropZone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dropZone.style.borderColor = '#D1D5DB';
+    });
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.style.borderColor = '#D1D5DB';
+        if (e.dataTransfer.files.length) {
+            fileInput.files = e.dataTransfer.files;
+            handleFile();
+        }
+    });
+
+    downloadBinBtn.addEventListener('click', () => {
+        const blob = new Blob([processedPaletteData], { type: 'application/octet-stream' });
+        const link = document.createElement('a');
+        link.download = 'image.bin';
+        link.href = URL.createObjectURL(blob);
+        link.click();
+    });
+    
+    downloadBtn.addEventListener('click', () => {
+        const link = document.createElement('a');
+        link.download = 'optimized-eink.png';
+        link.href = previewCanvas.toDataURL('image/png');
+        link.click();
+    });
+
+    function handleFile() {
+        if (!fileInput.files || !fileInput.files[0]) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            originalImage = new Image();
+            originalImage.onload = () => {
+                controls.style.display = 'flex';
+                canvases.style.display = 'flex';
+                processImage();
+            };
+            originalImage.src = e.target.result;
+        };
+        reader.readAsDataURL(fileInput.files[0]);
+    }
+
+    function colorDistance(c1, c2) {
+        return Math.pow(c1.r - c2.r, 2) + Math.pow(c1.g - c2.g, 2) + Math.pow(c1.b - c2.b, 2);
+    }
+
+    function getClosestColorIndex(r, g, b) {
+        let minDest = Infinity;
+        let closestIndex = 0;
+        const target = { r, g, b };
+        for (let i = 0; i < PALETTE.length; i++) {
+            const dist = colorDistance(target, PALETTE[i]);
+            if (dist < minDest) {
+                minDest = dist;
+                closestIndex = i;
+            }
+        }
+        return closestIndex;
+    }
+
+    function getClosestColor(r, g, b) {
+        return PALETTE[getClosestColorIndex(r, g, b)];
+    }
+
+    function processImage() {
+        // 1. Determine orientation and rotate if needed to maximize size
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, EINK_WIDTH, EINK_HEIGHT);
+
+        let imgW = originalImage.width;
+        let imgH = originalImage.height;
+        let isRotated = false;
+
+        // If the image is portrait but the screen is landscape (or vice-versa), rotate it 90 degrees
+        if ((imgH > imgW && EINK_WIDTH > EINK_HEIGHT) || (imgW > imgH && EINK_HEIGHT > EINK_WIDTH)) {
+            imgW = originalImage.height;
+            imgH = originalImage.width;
+            isRotated = true;
+        }
+
+        // 2. Draw scaled to fit (letterbox) to 600x448 without cropping
+        const scale = Math.min(EINK_WIDTH / imgW, EINK_HEIGHT / imgH);
+        const newWidth = imgW * scale;
+        const newHeight = imgH * scale;
+        const x = (EINK_WIDTH - newWidth) / 2;
+        const y = (EINK_HEIGHT - newHeight) / 2;
+
+        ctx.save();
+        if (isRotated) {
+            // Translate to center, rotate -90deg, and translate back
+            ctx.translate(EINK_WIDTH / 2, EINK_HEIGHT / 2);
+            ctx.rotate(-Math.PI / 2);
+            // We swap width and height for drawing because the canvas context is rotated
+            ctx.drawImage(originalImage, -newHeight / 2, -newWidth / 2, newHeight, newWidth);
+        } else {
+            ctx.drawImage(originalImage, x, y, newWidth, newHeight);
+        }
+        ctx.restore();
+
+        // 2. Get ImageData and apply palette mapping & dithering
+        const imageData = ctx.getImageData(0, 0, EINK_WIDTH, EINK_HEIGHT);
+        const data = imageData.data;
+
+        for (let y = 0; y < EINK_HEIGHT; y++) {
+            for (let x = 0; x < EINK_WIDTH; x++) {
+                const i = (y * EINK_WIDTH + x) * 4;
+                
+                const oldR = data[i];
+                const oldG = data[i+1];
+                const oldB = data[i+2];
+                const oldA = data[i+3];
+
+                // If fully transparent, force to white
+                let newColorIndex, newColor;
+                if (oldA < 128) {
+                    newColorIndex = 1; // EPD_5IN65F_WHITE
+                    newColor = PALETTE[1];
+                } else {
+                    newColorIndex = getClosestColorIndex(oldR, oldG, oldB);
+                    newColor = PALETTE[newColorIndex];
+                }
+
+                // Pack into the 4-bit per pixel .bin buffer
+                const pixelIndex = y * EINK_WIDTH + x;
+                const byteIndex = Math.floor(pixelIndex / 2);
+                if (pixelIndex % 2 === 0) {
+                    // High nibble
+                    processedPaletteData[byteIndex] = (processedPaletteData[byteIndex] & 0x0F) | (newColorIndex << 4);
+                } else {
+                    // Low nibble
+                    processedPaletteData[byteIndex] = (processedPaletteData[byteIndex] & 0xF0) | (newColorIndex & 0x0F);
+                }
+
+                data[i] = newColor.r;
+                data[i+1] = newColor.g;
+                data[i+2] = newColor.b;
+                data[i+3] = 255;
+
+                if (ditherSelect.value !== 'none') {
+                    const strength = parseFloat(ditherStrength.value);
+                    const errR = (oldR - newColor.r) * strength;
+                    const errG = (oldG - newColor.g) * strength;
+                    const errB = (oldB - newColor.b) * strength;
+
+                    const distributeError = (dx, dy, factor) => {
+                        if (x + dx >= 0 && x + dx < EINK_WIDTH && y + dy < EINK_HEIGHT) {
+                            const idx = ((y + dy) * EINK_WIDTH + (x + dx)) * 4;
+                            data[idx] = Math.min(255, Math.max(0, data[idx] + errR * factor));
+                            data[idx+1] = Math.min(255, Math.max(0, data[idx+1] + errG * factor));
+                            data[idx+2] = Math.min(255, Math.max(0, data[idx+2] + errB * factor));
+                        }
+                    };
+
+                    if (ditherSelect.value === 'floyd') {
+                        distributeError(1, 0, 7/16);
+                        distributeError(-1, 1, 3/16);
+                        distributeError(0, 1, 5/16);
+                        distributeError(1, 1, 1/16);
+                    } else if (ditherSelect.value === 'atkinson') {
+                        distributeError(1, 0, 1/8);
+                        distributeError(2, 0, 1/8);
+                        distributeError(-1, 1, 1/8);
+                        distributeError(0, 1, 1/8);
+                        distributeError(1, 1, 1/8);
+                        distributeError(0, 2, 1/8);
+                    }
+                }
+            }
+        }
+        ctx.putImageData(imageData, 0, 0);
+    }
+</script>
+</body>
+</html>
